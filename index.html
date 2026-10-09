@@ -1,0 +1,1224 @@
+<title>GainLog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------
+   晴空投資帳本 — layout: card dashboard + bottom tab bar,
+   content area swaps between home / stock-list / etf-list /
+   market-value, with a sliding detail panel per symbol.
+--------------------------------------------------------- */
+:root{
+  --bg-top:#DCEEFC; --bg-bottom:#FFFFFF;
+  --surface:#FFFFFF; --surface-alt:#F3FAFE;
+  --fg:#1C3040; --muted:#6B8AA3; --faint:#9FB9CC;
+  --border:#DEECF7;
+  --accent:#3E9BE0; --accent-strong:#1C7FC2; --accent-soft:#D9EEFC;
+  --profit:#2E9E6E; --profit-soft:#DEF3EA;
+  --loss:#E2574C; --loss-soft:#FCE4E2;
+  /* TW convention: red = gain, green = decline */
+  --gain:#E2574C; --gain-soft:#FCE4E2;
+  --decline:#2E9E6E; --decline-soft:#DEF3EA;
+  --gold:#D79A2C; --gold-soft:#FBF0DB;
+  --shadow: 0 1px 2px rgba(28,64,96,.06), 0 6px 20px rgba(28,64,96,.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg-top:#0D1B28; --bg-bottom:#0A141E;
+    --surface:#142432; --surface-alt:#182B3B;
+    --fg:#E7F2FA; --muted:#8CA9BF; --faint:#5A7488;
+    --border:#223647;
+    --accent:#5CB4F0; --accent-strong:#86CBFB; --accent-soft:#1E3A4D;
+    --profit:#4FCB9A; --profit-soft:#163228;
+    --loss:#F18A80; --loss-soft:#3A1E1D;
+    --gain:#F18A80; --gain-soft:#3A1E1D;
+    --decline:#4FCB9A; --decline-soft:#163228;
+    --gold:#E8BB63; --gold-soft:#3A2E16;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg-top:#0D1B28; --bg-bottom:#0A141E;
+  --surface:#142432; --surface-alt:#182B3B;
+  --fg:#E7F2FA; --muted:#8CA9BF; --faint:#5A7488;
+  --border:#223647;
+  --accent:#5CB4F0; --accent-strong:#86CBFB;
+  --accent-soft:#1E3A4D;
+  --profit:#4FCB9A; --profit-soft:#163228;
+  --loss:#F18A80; --loss-soft:#3A1E1D;
+  --gain:#F18A80; --gain-soft:#3A1E1D;
+  --decline:#4FCB9A; --decline-soft:#163228;
+  --gold:#E8BB63; --gold-soft:#3A2E16;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:'Noto Sans TC','Poppins',system-ui,sans-serif;
+  color:var(--fg);
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 320px);
+  background-attachment: fixed;
+  -webkit-font-smoothing:antialiased;
+}
+.num{ font-family:'Poppins','Noto Sans TC',sans-serif; font-variant-numeric:tabular-nums; }
+h1,h2,h3{ font-family:'Poppins','Noto Sans TC',sans-serif; margin:0; text-wrap:balance; }
+button{ font-family:inherit; }
+::selection{ background:var(--accent-soft); }
+
+/* ---------- app shell ---------- */
+#app{ max-width:560px; margin:0 auto; min-height:100%; padding-bottom:calc(84px + env(safe-area-inset-bottom,0px)); }
+
+/* ---------- header ---------- */
+header.topbar{
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:30;
+  padding:14px 18px 10px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  backdrop-filter:saturate(160%) blur(10px);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--bg-top) 88%, transparent) 70%, transparent);
+}
+.brand{ display:flex; align-items:center; gap:9px; }
+.brand svg{ width:30px; height:30px; flex:none; }
+.brand-text{ display:flex; flex-direction:column; line-height:1.15; }
+.brand-text b{ font-size:16.5px; font-weight:700; letter-spacing:.2px; }
+.brand-text span{ font-size:11px; color:var(--muted); letter-spacing:.3px; }
+.icon-btn{
+  width:38px; height:38px; border-radius:12px; border:1px solid var(--border);
+  background:var(--surface); display:flex; align-items:center; justify-content:center;
+  color:var(--fg); cursor:pointer; box-shadow:var(--shadow); flex:none;
+}
+.icon-btn svg{ width:18px; height:18px; }
+.icon-btn:active{ transform:scale(.94); }
+.header-actions{ display:flex; gap:8px; }
+
+/* ---------- main / sections ---------- */
+main{ padding:4px 18px 10px; }
+.section-title{ font-size:13px; font-weight:600; color:var(--muted); letter-spacing:.4px; margin:22px 2px 10px; display:flex; align-items:center; justify-content:space-between; }
+.section-title .tag{ font-weight:500; color:var(--faint); }
+
+/* ---------- cards ---------- */
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:18px;
+  box-shadow:var(--shadow); padding:16px;
+}
+.hero-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+
+.stat-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:15px;
+  box-shadow:var(--shadow); padding:11px 8px; cursor:pointer; min-width:0;
+  display:flex; flex-direction:column; gap:4px; position:relative; overflow:hidden;
+  transition:transform .15s ease;
+}
+.stat-card:active{ transform:scale(.98); }
+.stat-card .label{ font-size:10.5px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:4px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stat-card .label svg{ width:12px; height:12px; flex:none; }
+.stat-card .value{ font-size:16.5px; font-weight:700; letter-spacing:0; line-height:1.2; }
+.stat-card .sub{ font-size:10px; color:var(--faint); font-weight:600; }
+.stat-card .corner{ position:absolute; right:-16px; top:-16px; width:56px; height:56px; border-radius:50%; opacity:.4; }
+.stat-stock .corner{ background:var(--accent-soft); }
+.stat-etf .corner{ background:var(--profit-soft); }
+.stat-div .corner{ background:var(--gold-soft); }
+.up{ color:var(--gain); } .down{ color:var(--decline); }
+
+/* ---------- lists ---------- */
+.sym-list{ display:flex; flex-direction:column; gap:10px; }
+.sym-item{
+  background:var(--surface); border:1px solid var(--border); border-radius:16px;
+  padding:13px 14px; display:flex; align-items:center; gap:12px; cursor:pointer; box-shadow:var(--shadow);
+}
+.sym-item:active{ transform:scale(.99); }
+.sym-avatar{
+  width:42px; height:42px; border-radius:12px; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; font-size:13px; font-family:'Poppins',sans-serif;
+  background:var(--accent-soft); color:var(--accent-strong);
+}
+.sym-item.type-etf .sym-avatar{ background:var(--profit-soft); color:var(--profit); }
+.sym-main{ flex:1; min-width:0; }
+.sym-main .name{ font-weight:600; font-size:14.5px; display:flex; align-items:center; gap:6px; }
+.sym-main .code{ font-size:12px; color:var(--muted); font-family:'Poppins',sans-serif; }
+.sym-right{ text-align:right; flex:none; }
+.sym-right .v{ font-weight:700; font-size:14.5px; }
+.sym-right .l{ font-size:11px; color:var(--faint); }
+.chev{ color:var(--faint); flex:none; }
+.chev svg{ width:16px; height:16px; }
+
+.empty{
+  text-align:center; padding:40px 18px; color:var(--muted);
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+}
+.empty svg{ width:52px; height:52px; color:var(--faint); }
+.empty b{ color:var(--fg); font-size:14.5px; }
+.empty p{ margin:0; font-size:13px; line-height:1.6; max-width:280px; }
+
+/* ---------- buttons ---------- */
+.btn{
+  border:1px solid var(--border); background:var(--surface); color:var(--fg);
+  border-radius:12px; padding:10px 16px; font-size:13.5px; font-weight:600; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; justify-content:center;
+}
+.btn svg{ width:15px; height:15px; }
+.btn:active{ transform:scale(.97); }
+.btn-primary{ background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 45%, transparent); }
+.btn-ghost{ background:transparent; border-color:transparent; color:var(--accent-strong); }
+.btn-danger{ background:var(--loss-soft); border-color:var(--loss-soft); color:var(--loss); }
+.btn-block{ width:100%; }
+.btn-sm{ padding:7px 12px; font-size:12.5px; border-radius:10px; }
+.fab{
+  position:fixed; right:calc(18px + (100% - 560px) / 2); bottom:calc(92px + env(safe-area-inset-bottom,0px));
+  width:52px; height:52px; border-radius:16px; border:none; cursor:pointer;
+  background:var(--accent); color:#fff; box-shadow:0 10px 24px color-mix(in srgb, var(--accent) 50%, transparent);
+  display:flex; align-items:center; justify-content:center; z-index:35;
+}
+@media (max-width:596px){ .fab{ right:18px; } }
+.fab svg{ width:22px; height:22px; }
+
+/* ---------- bottom nav ---------- */
+nav.tabbar{
+  position:fixed; left:0; right:0; bottom:0; z-index:30;
+  padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));
+  display:flex; justify-content:center;
+}
+.tabbar-inner{
+  width:100%; max-width:520px; background:var(--surface); border:1px solid var(--border);
+  border-radius:20px; box-shadow:var(--shadow); display:flex; padding:6px;
+}
+.tab-btn{
+  flex:1; border:none; background:transparent; color:var(--muted); cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 4px; border-radius:14px;
+  font-size:10.5px; font-weight:600;
+}
+.tab-btn svg{ width:20px; height:20px; }
+.tab-btn.active{ color:var(--accent-strong); background:var(--accent-soft); }
+
+/* ---------- detail panel ---------- */
+.detail-head{ display:flex; align-items:center; gap:10px; margin:4px 0 16px; }
+.detail-head .sym-avatar{ width:46px; height:46px; }
+.detail-title{ flex:1; min-width:0; }
+.detail-title h2{ font-size:18px; font-weight:700; display:flex; align-items:center; gap:7px; }
+.detail-title .code{ font-size:12.5px; color:var(--muted); font-family:'Poppins',sans-serif; }
+.badge{ font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; letter-spacing:.3px; }
+.badge-stock{ background:var(--accent-soft); color:var(--accent-strong); }
+.badge-etf{ background:var(--profit-soft); color:var(--profit); }
+
+.metric-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+.metric{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 10px; text-align:center; box-shadow:var(--shadow); }
+.metric .mv{ font-size:16px; font-weight:700; }
+.metric .ml{ font-size:10.5px; color:var(--muted); margin-top:3px; }
+
+.subtabs{ display:flex; gap:4px; margin-bottom:14px; background:var(--surface-alt); padding:4px; border-radius:12px; }
+.subtab{ flex:1; min-width:0; border:none; background:transparent; padding:8px 2px; border-radius:9px; font-size:11.5px; font-weight:600; color:var(--muted); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.subtab.active{ background:var(--surface); color:var(--fg); box-shadow:var(--shadow); }
+
+.filter-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; }
+.seg{ display:flex; background:var(--surface-alt); border-radius:10px; padding:3px; }
+.seg button{ border:none; background:transparent; padding:6px 11px; font-size:12px; font-weight:600; color:var(--muted); border-radius:8px; cursor:pointer; }
+.seg button.active{ background:var(--surface); color:var(--accent-strong); box-shadow:var(--shadow); }
+
+.period-bar{ display:flex; align-items:center; gap:8px; margin:6px 0 16px; flex-wrap:wrap; }
+.period-bar .seg{ flex:none; }
+.period-bar select, .period-bar input[type="month"]{
+  border:1px solid var(--border); background:var(--surface); color:var(--fg);
+  border-radius:10px; padding:7px 10px; font-size:12.5px; font-weight:600; font-family:inherit;
+}
+.period-note{ font-size:11px; color:var(--faint); margin:-10px 0 14px; line-height:1.5; }
+
+.row-list{ display:flex; flex-direction:column; gap:8px; }
+.row-item{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:11px 13px; display:flex; align-items:center; gap:10px; box-shadow:var(--shadow);
+}
+.row-item .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+.dot-buy{ background:var(--loss); } .dot-sell{ background:var(--profit); } .dot-div{ background:var(--gold); } .dot-split{ background:var(--accent); }
+.row-mid{ flex:1; min-width:0; }
+.row-mid .t1{ font-size:13.5px; font-weight:600; }
+.row-mid .t2{ font-size:11.5px; color:var(--muted); margin-top:1px; }
+.row-amt{ text-align:right; font-weight:700; font-size:13.5px; flex:none; }
+.row-del{ flex:none; width:28px; height:28px; border-radius:8px; border:none; background:transparent; color:var(--faint); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.row-del svg{ width:14px; height:14px; }
+
+table.pl-table{ width:100%; border-collapse:collapse; font-size:13px; }
+table.pl-table th{ text-align:left; font-size:11px; color:var(--muted); font-weight:600; padding:0 8px 8px; border-bottom:1px solid var(--border); }
+table.pl-table td{ padding:9px 8px; border-bottom:1px solid var(--border); }
+table.pl-table tr:last-child td{ border-bottom:none; }
+.table-wrap{ overflow-x:auto; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:4px 8px; }
+
+.total-strip{ display:flex; justify-content:space-between; align-items:center; background:var(--surface-alt); border-radius:12px; padding:11px 14px; margin-bottom:12px; }
+.total-strip .l{ font-size:12.5px; color:var(--muted); font-weight:600; }
+.total-strip .v{ font-size:17px; font-weight:700; }
+
+/* ---------- modal ---------- */
+.overlay{
+  position:fixed; inset:0; background:rgba(10,20,30,.42); backdrop-filter:blur(2px);
+  display:flex; align-items:flex-end; justify-content:center; z-index:60; opacity:0; pointer-events:none;
+  transition:opacity .18s ease;
+}
+.overlay.show{ opacity:1; pointer-events:auto; }
+@media (min-width:600px){ .overlay{ align-items:center; } }
+.sheet{
+  width:100%; max-width:480px; background:var(--surface); border-radius:22px 22px 0 0;
+  padding:18px 20px calc(20px + env(safe-area-inset-bottom,0px)); max-height:88vh; overflow-y:auto;
+  transform:translateY(16px); transition:transform .18s ease; box-shadow:0 -10px 40px rgba(10,30,50,.25);
+}
+@media (min-width:600px){ .sheet{ border-radius:22px; max-height:80vh; } }
+.overlay.show .sheet{ transform:translateY(0); }
+.sheet-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.sheet-head h3{ font-size:16px; font-weight:700; }
+.field{ margin-bottom:13px; }
+.field label{ display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; }
+.field input, .field select, .field textarea{
+  width:100%; border:1px solid var(--border); background:var(--surface-alt); color:var(--fg);
+  border-radius:11px; padding:11px 12px; font-size:14.5px; font-family:inherit;
+}
+.field textarea{ resize:vertical; min-height:90px; font-family:'Poppins',monospace; font-size:12px; line-height:1.5; }
+.field input:focus, .field select:focus, .field textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+.toggle-row{ display:flex; gap:8px; }
+.toggle-row .opt{
+  flex:1; text-align:center; padding:10px; border-radius:11px; border:1px solid var(--border);
+  background:var(--surface-alt); font-weight:600; font-size:13.5px; cursor:pointer; color:var(--muted);
+}
+.toggle-row .opt.active.buy{ background:var(--loss-soft); color:var(--loss); border-color:var(--loss-soft); }
+.toggle-row .opt.active.sell{ background:var(--profit-soft); color:var(--profit); border-color:var(--profit-soft); }
+.toggle-row .opt.active.stock{ background:var(--accent-soft); color:var(--accent-strong); border-color:var(--accent-soft); }
+.toggle-row .opt.active.etf{ background:var(--profit-soft); color:var(--profit); border-color:var(--profit-soft); }
+.sheet-actions{ display:flex; gap:10px; margin-top:6px; }
+.sheet-actions .btn{ flex:1; }
+.hint{ font-size:11.5px; color:var(--faint); margin-top:-6px; margin-bottom:13px; line-height:1.5; }
+.switch-row{ display:flex; align-items:center; justify-content:space-between; padding:11px 2px; }
+.switch-row .t{ font-size:13.5px; font-weight:600; }
+.switch-row .d{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+.switch{ position:relative; width:44px; height:26px; flex:none; }
+.switch input{ opacity:0; width:100%; height:100%; position:absolute; margin:0; cursor:pointer; }
+.switch .track{ position:absolute; inset:0; background:var(--border); border-radius:999px; transition:.15s; }
+.switch .thumb{ position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:.15s; }
+.switch input:checked + .track{ background:var(--accent); }
+.switch input:checked ~ .thumb{ transform:translateX(18px); }
+
+.toast{
+  position:fixed; left:50%; bottom:calc(100px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,8px);
+  background:var(--fg); color:var(--bg-bottom); padding:10px 18px; border-radius:999px; font-size:12.5px; font-weight:600;
+  z-index:80; opacity:0; pointer-events:none; transition:.2s ease; box-shadow:var(--shadow);
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+
+.demo-banner{
+  display:flex; align-items:center; gap:10px; background:var(--gold-soft); border:1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius:14px; padding:11px 13px; margin:10px 0 4px; font-size:12px; color:var(--fg);
+}
+.demo-banner b{ color:var(--gold); }
+.demo-banner button{ flex:none; }
+
+.market-empty-art{ width:120px; height:120px; margin:0 auto 6px; }
+</style>
+
+<div id="app"></div>
+
+<div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ===================== ICONS ===================== */
+const I = {
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+  home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>',
+  stock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-8"/><path d="M15 6h5v5"/></svg>',
+  etf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6-9 6-9-6z"/><path d="M3 14l9 6 9-6"/></svg>',
+  market:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  coin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.2a2.2 2.2 0 012.2-1.7h.8a2 2 0 010 4h-1a2 2 0 000 4h1a2.2 2.2 0 002.1-1.5"/></svg>',
+  split:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v7a4 4 0 004 4h4"/><path d="M14 7l4-4 4 4M6 21v-7"/></svg>',
+  cloud:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 01-.3-9 5.5 5.5 0 0110.5-1.8A4 4 0 0117 18H7z"/></svg>',
+  inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>',
+  pencil:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17l5-5 5 5M7 11l5-5 5 5"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l5 5 5-5M7 13l5 5 5-5"/></svg>',
+};
+const brandLogo = '<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="var(--accent)"/><text x="16" y="21" font-family="Poppins, sans-serif" font-weight="700" font-size="13" fill="#fff" text-anchor="middle">GL</text></svg>';
+
+/* ===================== STORAGE ===================== */
+const STORE_KEY = 'skyledger_v1';
+let DB = null;
+
+function freshDB(){
+  return { symbols: [], transactions: [], dividends: [], exdiv: [], splits: [], market: {}, seq: 1, demo: false };
+}
+function demoDB(){
+  const db = freshDB();
+  db.demo = true;
+  db.symbols = [
+    {code:'2330', name:'台積電(範例)', type:'stock'},
+    {code:'0050', name:'元大台灣50(範例)', type:'etf'},
+  ];
+  db.transactions = [
+    {id:'d1', code:'2330', type:'buy', date:'2024-03-04', price:580, qty:100},
+    {id:'d2', code:'2330', type:'buy', date:'2024-08-12', price:905, qty:100},
+    {id:'d3', code:'2330', type:'sell', date:'2025-02-20', price:1010, qty:100},
+    {id:'d4', code:'0050', type:'buy', date:'2023-01-10', price:123, qty:1000},
+    {id:'d5', code:'0050', type:'buy', date:'2024-06-14', price:165, qty:500},
+    {id:'d6', code:'0050', type:'buy', date:'2025-09-02', price:190, qty:300},
+  ];
+  db.dividends = [
+    {id:'d7', code:'0050', date:'2024-07-15', amount:5330},
+    {id:'d8', code:'0050', date:'2025-01-15', amount:4120},
+    {id:'d9', code:'0050', date:'2025-07-15', amount:6980},
+  ];
+  db.exdiv = [
+    {id:'d10', code:'0050', date:'2025-07-15', amount:2.9, price:228},
+    {id:'d11', code:'0050', date:'2025-01-15', amount:1.9, price:195},
+  ];
+  db.splits = [];
+  db.market = { '2330': {enabled:true, price:1150, updatedAt:'2026-10-08'}, '0050': {enabled:true, price:238, updatedAt:'2026-10-08'} };
+  return db;
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){
+      DB = JSON.parse(raw);
+      if(!DB.market) DB.market={};
+      if(!DB.seq) DB.seq=1;
+      if(!DB.exdiv) DB.exdiv=[];
+      if(!DB.dividends) DB.dividends=[];
+      if(!DB.splits) DB.splits=[];
+      return;
+    }
+  }catch(e){}
+  DB = demoDB();
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
+}
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
+}
+function nextId(){ return 'r' + (DB.seq++) + '_' + Math.random().toString(36).slice(2,7); }
+
+/* ===================== CALC ===================== */
+function txForCode(code){ return DB.transactions.filter(t=>t.code===code); }
+function splitsForCode(code){ return DB.splits.filter(s=>s.code===code); }
+function divForCode(code){ return DB.dividends.filter(d=>d.code===code); }
+function exdivForCode(code){ return DB.exdiv.filter(d=>d.code===code); }
+
+function computeTimeline(code){
+  const events = [];
+  txForCode(code).forEach(t=>events.push(Object.assign({kind:'tx'}, t)));
+  splitsForCode(code).forEach(s=>events.push(Object.assign({kind:'split'}, s)));
+  events.sort((a,b)=>{
+    if(a.date!==b.date) return a.date<b.date?-1:1;
+    if(a.kind!==b.kind) return a.kind==='split'?-1:1;
+    return 0;
+  });
+  let qty=0, avgCost=0;
+  const realized = [];
+  events.forEach(e=>{
+    if(e.kind==='split'){
+      const m = Number(e.multiplier)||1;
+      qty = qty*m;
+      avgCost = m!==0 ? avgCost/m : avgCost;
+    } else if(e.type==='buy'){
+      const totalCost = qty*avgCost + e.qty*e.price;
+      qty += e.qty;
+      avgCost = qty>0 ? totalCost/qty : 0;
+    } else if(e.type==='sell'){
+      const sellQty = e.qty;
+      const pl = (e.price - avgCost) * sellQty;
+      qty -= sellQty;
+      realized.push({id:e.id, date:e.date, amount:pl, qty:sellQty, price:e.price});
+    }
+  });
+  return { qty, avgCost, realized };
+}
+function holdingCost(code){ const t = computeTimeline(code); return t.qty*t.avgCost; }
+function dividendTotal(code){ return divForCode(code).reduce((s,d)=>s+Number(d.amount||0),0); }
+
+function symbolRealizedTotal(code){ return computeTimeline(code).realized.reduce((a,r)=>a+r.amount,0); }
+
+/* ---- global 年/月/全部 period filter, used by home / list / market pages ---- */
+function matchesPeriod(dateStr, pf){
+  pf = pf || state.pf;
+  if(!pf || pf.mode==='all') return true;
+  if(pf.mode==='year') return dateStr.slice(0,4)===pf.year;
+  if(pf.mode==='month') return dateStr.slice(0,7)===pf.month;
+  return true;
+}
+function realizedInPeriod(code){ return computeTimeline(code).realized.filter(r=>matchesPeriod(r.date)).reduce((s,r)=>s+r.amount,0); }
+function buyCostInPeriod(code){ return txForCode(code).filter(t=>t.type==='buy' && matchesPeriod(t.date)).reduce((s,t)=>s+t.price*t.qty,0); }
+function dividendInPeriod(code){ return divForCode(code).filter(d=>matchesPeriod(d.date)).reduce((s,d)=>s+Number(d.amount||0),0); }
+function allStockRealizedInPeriod(){
+  let sum=0; DB.symbols.filter(s=>s.type==='stock').forEach(s=>{ sum += realizedInPeriod(s.code); }); return sum;
+}
+function allEtfInvestedInPeriod(){
+  let sum=0; DB.symbols.filter(s=>s.type==='etf').forEach(s=>{ sum += buyCostInPeriod(s.code); }); return sum;
+}
+function allEtfDividendInPeriod(){
+  let sum=0; DB.symbols.filter(s=>s.type==='etf').forEach(s=>{ sum += dividendInPeriod(s.code); }); return sum;
+}
+function availableYears(){
+  const ys = new Set([String(new Date().getFullYear())]);
+  DB.transactions.forEach(t=>ys.add(t.date.slice(0,4)));
+  DB.dividends.forEach(d=>ys.add(d.date.slice(0,4)));
+  DB.splits.forEach(s=>ys.add(s.date.slice(0,4)));
+  return Array.from(ys).sort().reverse();
+}
+function periodLabelShort(pf){
+  pf = pf || state.pf;
+  if(pf.mode==='year') return pf.year+'年';
+  if(pf.mode==='month'){ const [y,m]=pf.month.split('-'); return y+'/'+m; }
+  return '全部';
+}
+
+function periodKey(date, gran){
+  if(gran==='year') return date.slice(0,4);
+  if(gran==='month') return date.slice(0,7);
+  return date;
+}
+function groupPL(realized, gran){
+  const map = {};
+  realized.forEach(r=>{ const k = periodKey(r.date, gran); map[k] = (map[k]||0) + r.amount; });
+  return Object.keys(map).sort().reverse().map(k=>({ period:k, amount:map[k] }));
+}
+
+/* ===================== FORMAT ===================== */
+function fmt(n){
+  n = Math.round(Number(n)||0);
+  const neg = n<0; n=Math.abs(n);
+  const s = n.toLocaleString('en-US');
+  return (neg?'-':'') + 'NT$' + s;
+}
+function fmtNum(n, d){
+  d = d||0;
+  return Number(n||0).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+}
+function fmtCompact(n){
+  n = Number(n)||0;
+  const neg = n<0; const abs = Math.abs(n);
+  let s;
+  if(abs >= 100000000) s = (abs/100000000).toFixed(2)+'億';
+  else if(abs >= 10000) s = (abs/10000).toFixed(1)+'萬';
+  else s = Math.round(abs).toLocaleString('en-US');
+  return (neg?'-':'') + s;
+}
+function fmtDate(s){
+  if(!s) return '';
+  const [y,m,d] = s.split('-');
+  return y+'/'+m+'/'+d;
+}
+function todayStr(){
+  const d = new Date();
+  const p = n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ===================== STATE / ROUTER ===================== */
+const state = {
+  tab:'home', detailCode:null, etfSub:'list', detailSub:'tx', plGran:'month',
+  pf: { mode:'all', year:String(new Date().getFullYear()), month: todayStr().slice(0,7) },
+};
+function setPfMode(mode){
+  state.pf.mode = mode;
+  if(mode==='year' && !state.pf.year) state.pf.year = String(new Date().getFullYear());
+  if(mode==='month' && !state.pf.month) state.pf.month = todayStr().slice(0,7);
+  render();
+}
+function setPfYear(y){ state.pf.year = y; render(); }
+function setPfMonth(m){ state.pf.month = m; render(); }
+function periodFilterBar(){
+  const pf = state.pf;
+  let extra = '';
+  if(pf.mode==='year'){
+    extra = '<select onchange="UI.setPfYear(this.value)">' + availableYears().map(y=>
+      '<option value="'+y+'"'+(y===pf.year?' selected':'')+'>'+y+' 年</option>'
+    ).join('') + '</select>';
+  } else if(pf.mode==='month'){
+    extra = '<input type="month" value="'+pf.month+'" onchange="UI.setPfMonth(this.value)">';
+  }
+  return '<div class="period-bar"><div class="seg">'+
+    '<button class="'+(pf.mode==='all'?'active':'')+'" onclick="UI.setPfMode(\'all\')">全部</button>'+
+    '<button class="'+(pf.mode==='year'?'active':'')+'" onclick="UI.setPfMode(\'year\')">年</button>'+
+    '<button class="'+(pf.mode==='month'?'active':'')+'" onclick="UI.setPfMode(\'month\')">月</button>'+
+    '</div>'+extra+'</div>';
+}
+
+function go(tab){ state.tab=tab; state.detailCode=null; state.etfSub='list'; render(); window.scrollTo(0,0); }
+function openDetail(code){ state.detailCode=code; state.detailSub='tx'; state.plGran='month'; render(); window.scrollTo(0,0); }
+function closeDetail(){ state.detailCode=null; render(); window.scrollTo(0,0); }
+
+/* ===================== TOAST / MODAL ===================== */
+let toastTimer=null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 1800);
+}
+function openSheet(html){
+  const overlay = document.getElementById('overlay');
+  const sheet = document.getElementById('sheet');
+  sheet.innerHTML = html;
+  overlay.classList.add('show');
+}
+function closeSheet(){
+  document.getElementById('overlay').classList.remove('show');
+}
+document.getElementById('overlay').addEventListener('click', e=>{
+  if(e.target.id==='overlay') closeSheet();
+});
+
+function confirmSheet(message, onYes){
+  openSheet(
+    '<div class="sheet-head"><h3>確認操作</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 18px;">'+esc(message)+'</p>'+
+    '<div class="sheet-actions">'+
+      '<button class="btn" onclick="UI.closeSheet()">取消</button>'+
+      '<button class="btn btn-danger" id="confirmYes">確認刪除</button>'+
+    '</div>'
+  );
+  document.getElementById('confirmYes').onclick = function(){ closeSheet(); onYes(); };
+}
+
+/* ===================== RENDER: SHELL ===================== */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = headerHtml() + '<main id="main"></main>' + tabbarHtml() + fabHtml();
+  document.getElementById('main').innerHTML = state.detailCode ? renderDetail(state.detailCode) : renderTab();
+}
+
+function headerHtml(){
+  if(state.detailCode){
+    return '<header class="topbar"><button class="icon-btn" onclick="UI.closeDetail()">'+I.back+'</button>'+
+      '<div class="brand-text" style="align-items:center;"><span style="font-size:11px;color:var(--muted);">明細</span></div>'+
+      '<button class="icon-btn" onclick="UI.openSettingsSheet()">'+I.settings+'</button></header>';
+  }
+  return '<header class="topbar">'+
+    '<div class="brand">'+brandLogo+'<div class="brand-text"><b>GainLog</b><span>'+titleSub()+'</span></div></div>'+
+    '<div class="header-actions"><button class="icon-btn" onclick="UI.openSettingsSheet()">'+I.settings+'</button></div>'+
+    '</header>';
+}
+function titleSub(){
+  const d = new Date();
+  return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日';
+}
+function tabbarHtml(){
+  const tabs = [
+    {k:'home', label:'首頁', icon:I.home},
+    {k:'stocks', label:'個股', icon:I.stock},
+    {k:'etf', label:'存股', icon:I.etf},
+    {k:'market', label:'市值', icon:I.market},
+  ];
+  return '<nav class="tabbar"><div class="tabbar-inner">' + tabs.map(t=>
+    '<button class="tab-btn'+(state.tab===t.k&&!state.detailCode?' active':'')+'" onclick="UI.go(\''+t.k+'\')">'+t.icon+'<span>'+t.label+'</span></button>'
+  ).join('') + '</div></nav>';
+}
+function fabHtml(){
+  if(state.detailCode) return '';
+  if(state.tab==='stocks') return '<button class="fab" onclick="UI.openAddSymbolSheet(\'stock\')">'+I.plus+'</button>';
+  if(state.tab==='etf' && state.etfSub==='list') return '<button class="fab" onclick="UI.openAddSymbolSheet(\'etf\')">'+I.plus+'</button>';
+  return '';
+}
+
+/* ===================== RENDER: TABS ===================== */
+function renderTab(){
+  if(state.tab==='home') return renderHome();
+  if(state.tab==='stocks') return renderSymbolList('stock');
+  if(state.tab==='etf') return state.etfSub==='dividends' ? renderDividendSummary() : renderSymbolList('etf');
+  if(state.tab==='market') return renderMarket();
+  return '';
+}
+
+function demoBanner(){
+  if(!DB.demo) return '';
+  return '<div class="demo-banner">'+I.inbox.replace('width:24','width:18')+
+    '<div style="flex:1;">這是<b>範例資料</b>，讓你先看看畫面長怎樣。開始記錄前記得清除。</div>'+
+    '<button class="btn btn-sm" onclick="UI.clearDemo()">清除範例</button></div>';
+}
+
+function renderHome(){
+  const stockPL = allStockRealizedInPeriod();
+  const etfInvested = allEtfInvestedInPeriod();
+  const divTotal = allEtfDividendInPeriod();
+  const pLabel = periodLabelShort();
+
+  let html = '';
+  html += demoBanner();
+  html += periodFilterBar();
+  html += '<div class="hero-grid">';
+  html += '<div class="stat-card stat-stock" onclick="UI.go(\'stocks\')"><div class="corner"></div>'+
+    '<div class="label">'+I.stock.replace('width="24"','width="14"').replace('height="24"','height="14"')+' 個股損益</div>'+
+    '<div class="value num '+(stockPL>=0?'up':'down')+'">'+fmtCompact(stockPL)+'</div>'+
+    '<div class="sub">'+pLabel+'</div></div>';
+  html += '<div class="stat-card stat-etf" onclick="UI.go(\'etf\')"><div class="corner"></div>'+
+    '<div class="label">'+I.etf.replace('width="24"','width="14"').replace('height="24"','height="14"')+' 存股投入</div>'+
+    '<div class="value num">'+fmtCompact(etfInvested)+'</div>'+
+    '<div class="sub">'+pLabel+'</div></div>';
+  html += '<div class="stat-card stat-div" onclick="UI.go(\'etf\');UI.setEtfSub(\'dividends\')"><div class="corner"></div>'+
+    '<div class="label">'+I.coin.replace('width="24"','width="14"').replace('height="24"','height="14"')+' 存股股息</div>'+
+    '<div class="value num" style="color:var(--gold);">'+fmtCompact(divTotal)+'</div>'+
+    '<div class="sub">'+pLabel+'</div></div>';
+  html += '</div>';
+
+  const all = DB.symbols;
+  html += '<div class="section-title">持股總覽<span class="tag">'+all.length+' 檔</span></div>';
+  if(all.length===0){
+    html += emptyState('目前還沒有任何標的', '到「個股」或「存股」分頁，用右下角的＋新增你第一筆投資標的。', I.inbox);
+  } else {
+    html += '<div class="sym-list">' + all.map(renderSymRow).join('') + '</div>';
+  }
+  return html;
+}
+
+function emptyState(title, desc, icon){
+  return '<div class="empty">'+icon+'<b>'+esc(title)+'</b><p>'+esc(desc)+'</p></div>';
+}
+
+function renderSymRow(sym){
+  const tl = computeTimeline(sym.code);
+  const isEtf = sym.type==='etf';
+  const metric = isEtf ? buyCostInPeriod(sym.code) : realizedInPeriod(sym.code);
+  const metricLabel = isEtf ? '投入金額' : '損益';
+  const cls = isEtf ? '' : (metric>=0?'up':'down');
+  return '<div class="sym-item type-'+sym.type+'" onclick="UI.openDetail(\''+sym.code+'\')">'+
+    '<div class="sym-avatar">'+esc(sym.code.slice(0,4))+'</div>'+
+    '<div class="sym-main"><div class="name">'+esc(sym.name)+'</div><div class="code">'+esc(sym.code)+' · 持有 '+fmtNum(tl.qty)+' 股</div></div>'+
+    '<div class="sym-right"><div class="v num '+cls+'">'+fmt(metric)+'</div><div class="l">'+metricLabel+'</div></div>'+
+    '<div class="chev">'+I.chev+'</div></div>';
+}
+
+function renderSymbolList(type){
+  const list = DB.symbols.filter(s=>s.type===type);
+  const label = type==='stock' ? '個股' : '存股 ETF';
+  let html = '';
+  if(type==='etf') html += etfSubtabsHtml();
+  html += demoBanner();
+  html += periodFilterBar();
+  html += '<div class="section-title">'+label+'<span class="tag">'+list.length+' 檔</span></div>';
+  if(list.length===0){
+    html += emptyState('還沒有'+label+'紀錄', '點右下角的＋新增一檔標的，開始記錄買進賣出。', type==='stock'?I.stock:I.etf);
+  } else {
+    html += '<div class="sym-list">' + list.map(renderSymRow).join('') + '</div>';
+  }
+  return html;
+}
+function etfSubtabsHtml(){
+  return '<div class="subtabs">'+
+    '<button class="subtab'+(state.etfSub==='list'?' active':'')+'" onclick="UI.setEtfSub(\'list\')">持股列表</button>'+
+    '<button class="subtab'+(state.etfSub==='dividends'?' active':'')+'" onclick="UI.setEtfSub(\'dividends\')">股息總表</button>'+
+    '</div>';
+}
+
+function renderDividendSummary(){
+  let html = etfSubtabsHtml();
+  html += periodFilterBar();
+  const etfSymbols = DB.symbols.filter(s=>s.type==='etf');
+  const allDiv = DB.dividends.filter(d=> etfSymbols.some(s=>s.code===d.code));
+  const periodDiv = allDiv.filter(d=>matchesPeriod(d.date));
+  html += '<div class="total-strip"><div class="l">股息總額 · '+periodLabelShort()+'</div><div class="v num" style="color:var(--gold);">'+fmt(periodDiv.reduce((s,d)=>s+Number(d.amount),0))+'</div></div>';
+
+  if(etfSymbols.length===0 || allDiv.length===0){
+    html += emptyState('還沒有股息紀錄', '進入某一檔存股的明細頁，在「除息日」分頁新增除息紀錄。', I.coin);
+    return html;
+  }
+
+  // Year x Name matrix (full history, unaffected by the period filter above)
+  const years = Array.from(new Set(allDiv.map(d=>d.date.slice(0,4)))).sort().reverse();
+  const names = etfSymbols.filter(s=>DB.dividends.some(d=>d.code===s.code));
+  html += '<div class="section-title">年度 × 標的 股息總表<span class="tag">歷年全覽</span></div>';
+  html += '<div class="table-wrap"><table class="pl-table"><thead><tr><th>年度</th>'+
+    names.map(n=>'<th style="text-align:right;">'+esc(n.name)+'</th>').join('')+
+    '<th style="text-align:right;">小計</th></tr></thead><tbody>';
+  years.forEach(y=>{
+    let rowTotal=0;
+    html += '<tr><td class="num">'+y+'</td>';
+    names.forEach(n=>{
+      const sum = allDiv.filter(d=>d.code===n.code && d.date.slice(0,4)===y).reduce((s,d)=>s+Number(d.amount),0);
+      rowTotal += sum;
+      html += '<td class="num" style="text-align:right;">'+(sum? fmtNum(sum): '—')+'</td>';
+    });
+    html += '<td class="num" style="text-align:right;font-weight:700;">'+fmtNum(rowTotal)+'</td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  html += '<div class="section-title">各標的累計股息<span class="tag">'+periodLabelShort()+'</span></div><div class="row-list">';
+  names.forEach(n=>{
+    const sum = dividendInPeriod(n.code);
+    html += '<div class="row-item"><div class="dot dot-div"></div><div class="row-mid"><div class="t1">'+esc(n.name)+'</div><div class="t2">'+esc(n.code)+'</div></div><div class="row-amt num" style="color:var(--gold);">'+fmt(sum)+'</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderMarket(){
+  const enabled = DB.symbols.filter(s=> DB.market[s.code] && DB.market[s.code].enabled);
+  let html = '<div class="section-title">市值總覽<span class="tag">需手動設定</span></div>';
+
+  if(enabled.length===0){
+    html += '<div class="empty">'+I.market+
+      '<b>尚未設定任何市值</b>'+
+      '<p>市值資料不會自動抓取，也不會混進你平常看的投入/股息紀錄裡。想追蹤報酬率的話，先選擇要納入計算的標的並輸入目前股價。</p>'+
+      '<button class="btn btn-primary" onclick="UI.openMarketManageSheet()">'+I.plus+' 設定市值標的</button>'+
+      '</div>';
+    return html;
+  }
+
+  html += periodFilterBar();
+  html += '<div class="period-note">成本與市值是目前持股的即時狀態，只有股息會依上方期間篩選。</div>';
+
+  let totalCost=0, totalValue=0, totalDiv=0;
+  const rows = enabled.map(s=>{
+    const tl = computeTimeline(s.code);
+    const m = DB.market[s.code];
+    const cost = tl.qty*tl.avgCost;
+    const value = tl.qty*(Number(m.price)||0);
+    const div = s.type==='etf' ? dividendInPeriod(s.code) : 0;
+    totalCost+=cost; totalValue+=value; totalDiv+=div;
+    return {sym:s, cost, value, div, updatedAt:m.updatedAt};
+  });
+  const totalReturn = totalValue + totalDiv - totalCost;
+  const totalPct = totalCost>0 ? (totalReturn/totalCost*100) : 0;
+
+  html += '<div class="card" style="margin-bottom:16px;">'+
+    '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">成本</span><span class="num" style="font-weight:700;">'+fmt(totalCost)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">市值</span><span class="num" style="font-weight:700;">'+fmt(totalValue)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">累計股息 · '+periodLabelShort()+'</span><span class="num" style="font-weight:700;color:var(--gold);">'+fmt(totalDiv)+'</span></div>'+
+    '<div style="height:1px;background:var(--border);margin:10px 0;"></div>'+
+    '<div style="display:flex;justify-content:space-between;"><span style="font-size:13px;font-weight:700;">含息報酬</span><span class="num '+(totalReturn>=0?'up':'down')+'" style="font-weight:700;font-size:17px;">'+fmt(totalReturn)+' ('+(totalPct>=0?'+':'')+fmtNum(totalPct,2)+'%)</span></div>'+
+    '</div>';
+
+  html += '<div class="section-title">持股明細<button class="btn btn-ghost btn-sm" onclick="UI.openMarketManageSheet()">管理標的</button></div>';
+  html += '<div class="sym-list">';
+  rows.forEach(r=>{
+    const ret = r.value + r.div - r.cost;
+    const pct = r.cost>0 ? ret/r.cost*100 : 0;
+    html += '<div class="sym-item type-'+r.sym.type+'" onclick="UI.openDetail(\''+r.sym.code+'\')">'+
+      '<div class="sym-avatar">'+esc(r.sym.code.slice(0,4))+'</div>'+
+      '<div class="sym-main"><div class="name">'+esc(r.sym.name)+'</div><div class="code">成本 '+fmtNum(r.cost)+' · 市值 '+fmtNum(r.value)+'</div></div>'+
+      '<div class="sym-right"><div class="v num '+(ret>=0?'up':'down')+'">'+(pct>=0?'+':'')+fmtNum(pct,1)+'%</div><div class="l">'+fmtDate(r.updatedAt||'')+' 更新</div></div>'+
+      '<div class="chev">'+I.chev+'</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+/* ===================== RENDER: DETAIL ===================== */
+function renderDetail(code){
+  const sym = DB.symbols.find(s=>s.code===code);
+  if(!sym) return emptyState('找不到這筆標的','可能已被刪除。', I.inbox);
+  const tl = computeTimeline(code);
+  const isEtf = sym.type==='etf';
+  const realizedTotal = tl.realized.reduce((s,r)=>s+r.amount,0);
+
+  let html = '<div class="detail-head"><div class="sym-avatar">'+esc(code.slice(0,4))+'</div>'+
+    '<div class="detail-title"><h2>'+esc(sym.name)+' <span class="badge badge-'+sym.type+'">'+(isEtf?'ETF':'個股')+'</span></h2>'+
+    '<div class="code">'+esc(code)+'</div></div>'+
+    '<button class="icon-btn" onclick="UI.confirmDeleteSymbol(\''+code+'\')">'+I.trash+'</button>'+
+    '</div>';
+
+  html += '<div class="metric-row">'+
+    '<div class="metric"><div class="mv num">'+fmtNum(tl.qty)+'</div><div class="ml">持有股數</div></div>'+
+    '<div class="metric"><div class="mv num">'+fmtNum(tl.avgCost,2)+'</div><div class="ml">加權均價</div></div>'+
+    '<div class="metric"><div class="mv num '+(isEtf?'':(realizedTotal>=0?'up':'down'))+'">'+(isEtf?fmtNum(tl.qty*tl.avgCost):fmt(realizedTotal))+'</div><div class="ml">'+(isEtf?'投入成本':'已實現損益')+'</div></div>'+
+    '</div>';
+
+  const subtabs = [{k:'tx',label:'交易紀錄'}];
+  if(isEtf){ subtabs.push({k:'div',label:'股利紀錄'}); subtabs.push({k:'exdiv',label:'除息日'}); }
+  else { subtabs.push({k:'pl',label:'損益統計'}); }
+  subtabs.push({k:'split',label:'股票分割'});
+  html += '<div class="subtabs">' + subtabs.map(t=>
+    '<button class="subtab'+(state.detailSub===t.k?' active':'')+'" onclick="UI.setDetailSub(\''+t.k+'\')">'+t.label+'</button>'
+  ).join('') + '</div>';
+
+  if(state.detailSub==='tx') html += renderTxSection(sym);
+  else if(state.detailSub==='div') html += renderDivSection(sym);
+  else if(state.detailSub==='exdiv') html += renderExdivSection(sym);
+  else if(state.detailSub==='pl') html += renderPlSection(sym, isEtf);
+  else if(state.detailSub==='split') html += renderSplitSection(sym);
+
+  return html;
+}
+
+function renderTxSection(sym){
+  const list = txForCode(sym.code).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let html = '<div class="filter-row"><div style="font-size:12.5px;color:var(--muted);font-weight:600;">共 '+list.length+' 筆交易</div>'+
+    '<button class="btn btn-primary btn-sm" onclick="UI.openTxSheet(\''+sym.code+'\')">'+I.plus+' 新增交易</button></div>';
+  if(list.length===0){
+    html += emptyState('還沒有交易紀錄', '新增第一筆買進或賣出紀錄。', I.stock);
+    return html;
+  }
+  html += '<div class="row-list">' + list.map(t=>{
+    const isBuy = t.type==='buy';
+    return '<div class="row-item"><div class="dot '+(isBuy?'dot-buy':'dot-sell')+'"></div>'+
+      '<div class="row-mid"><div class="t1">'+(isBuy?'買進':'賣出')+' '+fmtNum(t.qty)+' 股</div><div class="t2">'+fmtDate(t.date)+' · 單價 '+fmtNum(t.price,2)+'</div></div>'+
+      '<div class="row-amt '+(isBuy?'':'')+'">'+fmt(t.price*t.qty)+'</div>'+
+      '<button class="row-del" onclick="UI.confirmDeleteTx(\''+t.id+'\')">'+I.trash+'</button></div>';
+  }).join('') + '</div>';
+  return html;
+}
+
+function renderDivSection(sym){
+  const list = divForCode(sym.code).slice().sort((a,b)=> a.date<b.date?1:-1);
+  const total = list.reduce((s,d)=>s+Number(d.amount),0);
+  let html = '<div class="total-strip"><div class="l">累計股息</div><div class="v num" style="color:var(--gold);">'+fmt(total)+'</div></div>';
+  html += '<div class="filter-row"><div style="font-size:12.5px;color:var(--muted);font-weight:600;">共 '+list.length+' 筆除息紀錄</div>'+
+    '<button class="btn btn-primary btn-sm" onclick="UI.openDivSheet(\''+sym.code+'\')">'+I.plus+' 新增股息</button></div>';
+  if(list.length===0){
+    html += emptyState('還沒有股息紀錄', '除息日和金額目前無法自動爬取，請在這裡手動輸入。', I.coin);
+    return html;
+  }
+  html += '<div class="row-list">' + list.map(d=>
+    '<div class="row-item"><div class="dot dot-div"></div>'+
+    '<div class="row-mid"><div class="t1">除息入帳</div><div class="t2">'+fmtDate(d.date)+(d.note?(' · '+esc(d.note)):'')+'</div></div>'+
+    '<div class="row-amt num" style="color:var(--gold);">'+fmt(d.amount)+'</div>'+
+    '<button class="row-del" onclick="UI.confirmDeleteDiv(\''+d.id+'\')">'+I.trash+'</button></div>'
+  ).join('') + '</div>';
+  return html;
+}
+
+function renderExdivSection(sym){
+  const list = exdivForCode(sym.code).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let html = '<div class="hint" style="margin-top:0;">新增時輸入除息日、現金股利（每股）、當前股價，殖利率會自動算出來。</div>';
+  html += '<div class="filter-row"><div style="font-size:12.5px;color:var(--muted);font-weight:600;">共 '+list.length+' 筆除息日紀錄</div>'+
+    '<button class="btn btn-primary btn-sm" onclick="UI.openExdivSheet(\''+sym.code+'\')">'+I.plus+' 新增除息日</button></div>';
+  if(list.length===0){
+    html += emptyState('還沒有除息日紀錄', '新增除息日、現金股利和當前股價，系統會自動算出殖利率。', I.split);
+    return html;
+  }
+  html += '<div class="table-wrap"><table class="pl-table"><thead><tr><th>除息日</th><th style="text-align:right;">現金股利</th><th style="text-align:right;">殖利率</th><th></th></tr></thead><tbody>' +
+    list.map(d=>{
+      const price = Number(d.price)||0;
+      const y = price>0 ? (Number(d.amount)/price*100) : null;
+      return '<tr><td class="num">'+fmtDate(d.date)+'</td>'+
+        '<td class="num" style="text-align:right;color:var(--gold);">'+fmtNum(d.amount,2)+'</td>'+
+        '<td class="num" style="text-align:right;font-weight:700;">'+(y==null?'—':fmtNum(y,2)+'%')+'</td>'+
+        '<td style="text-align:right;"><button class="row-del" onclick="UI.confirmDeleteExdiv(\''+d.id+'\')">'+I.trash+'</button></td></tr>';
+    }).join('') +
+    '</tbody></table></div>';
+  return html;
+}
+
+function renderPlSection(sym, isEtf){
+  const tl = computeTimeline(sym.code);
+  let html = '<div class="filter-row"><div style="font-size:12.5px;color:var(--muted);font-weight:600;">已實現損益</div>'+
+    '<div class="seg">'+
+      ['day','月','year'].map(()=>'').join('') +
+      '<button class="'+(state.plGran==='day'?'active':'')+'" onclick="UI.setPlGran(\'day\')">日</button>'+
+      '<button class="'+(state.plGran==='month'?'active':'')+'" onclick="UI.setPlGran(\'month\')">月</button>'+
+      '<button class="'+(state.plGran==='year'?'active':'')+'" onclick="UI.setPlGran(\'year\')">年</button>'+
+    '</div></div>';
+  const grouped = groupPL(tl.realized, state.plGran);
+  const total = tl.realized.reduce((s,r)=>s+r.amount,0);
+  html += '<div class="total-strip"><div class="l">累計已實現損益</div><div class="v num '+(total>=0?'up':'down')+'">'+fmt(total)+'</div></div>';
+  if(grouped.length===0){
+    html += emptyState('還沒有已實現損益', '賣出後系統會自動依加權平均成本計算損益，並依你選的日/月/年彙整在這裡。', I.market);
+    return html;
+  }
+  html += '<div class="table-wrap"><table class="pl-table"><thead><tr><th>期間</th><th style="text-align:right;">損益</th></tr></thead><tbody>'+
+    grouped.map(g=> '<tr><td class="num">'+periodLabel(g.period, state.plGran)+'</td><td class="num '+(g.amount>=0?'up':'down')+'" style="text-align:right;font-weight:700;">'+fmt(g.amount)+'</td></tr>').join('')+
+    '</tbody></table></div>';
+  return html;
+}
+function periodLabel(p, gran){
+  if(gran==='year') return p+' 年';
+  if(gran==='month'){ const [y,m]=p.split('-'); return y+'/'+m; }
+  return fmtDate(p);
+}
+
+function renderSplitSection(sym){
+  const list = splitsForCode(sym.code).slice().sort((a,b)=> a.date<b.date?1:-1);
+  let html = '<div class="hint" style="margin-top:0;">記錄股票分割（例：1股分2股填 2，2股合1股填 0.5），系統會自動調整分割前的股數與平均成本。</div>';
+  html += '<div class="filter-row"><div style="font-size:12.5px;color:var(--muted);font-weight:600;">共 '+list.length+' 筆分割紀錄</div>'+
+    '<button class="btn btn-primary btn-sm" onclick="UI.openSplitSheet(\''+sym.code+'\')">'+I.plus+' 新增分割</button></div>';
+  if(list.length===0){
+    html += emptyState('還沒有分割紀錄', '這檔標的若發生過股票分割，可以在這裡新增。', I.split);
+    return html;
+  }
+  html += '<div class="row-list">' + list.map(s=>
+    '<div class="row-item"><div class="dot dot-split"></div>'+
+    '<div class="row-mid"><div class="t1">1 股 → '+fmtNum(s.multiplier,2)+' 股</div><div class="t2">'+fmtDate(s.date)+'</div></div>'+
+    '<button class="row-del" onclick="UI.confirmDeleteSplit(\''+s.id+'\')">'+I.trash+'</button></div>'
+  ).join('') + '</div>';
+  return html;
+}
+
+/* ===================== SHEETS: forms ===================== */
+function openAddSymbolSheet(defaultType){
+  openSheet(
+    '<div class="sheet-head"><h3>新增標的</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="toggle-row" id="symType" style="margin-bottom:16px;">'+
+      '<div class="opt stock'+(defaultType==='stock'?' active':'')+'" data-v="stock" onclick="UI.pickSymType(this)">個股</div>'+
+      '<div class="opt etf'+(defaultType==='etf'?' active':'')+'" data-v="etf" onclick="UI.pickSymType(this)">存股 ETF</div>'+
+    '</div>'+
+    '<div class="field"><label>股票代號</label><input id="symCode" placeholder="例如 2330" inputmode="numeric"></div>'+
+    '<div class="field"><label>名稱</label><input id="symName" placeholder="例如 台積電"></div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitAddSymbol()">新增</button></div>'
+  );
+}
+function pickSymType(el){
+  el.parentElement.querySelectorAll('.opt').forEach(o=>o.classList.remove('active'));
+  el.classList.add('active');
+}
+function submitAddSymbol(){
+  const type = document.querySelector('#symType .opt.active').dataset.v;
+  const code = document.getElementById('symCode').value.trim();
+  const name = document.getElementById('symName').value.trim();
+  if(!code || !name){ toast('請填寫代號與名稱'); return; }
+  if(DB.symbols.some(s=>s.code===code)){ toast('這個代號已經存在了'); return; }
+  DB.symbols.push({code, name, type});
+  save(); closeSheet(); toast('已新增 '+name);
+  state.tab = type==='stock' ? 'stocks' : 'etf';
+  render();
+}
+
+function openTxSheet(code){
+  openSheet(
+    '<div class="sheet-head"><h3>新增交易</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="toggle-row" id="txType" style="margin-bottom:16px;">'+
+      '<div class="opt buy active" data-v="buy" onclick="UI.pickTxType(this)">買進</div>'+
+      '<div class="opt sell" data-v="sell" onclick="UI.pickTxType(this)">賣出</div>'+
+    '</div>'+
+    '<div class="field"><label>日期</label><input id="txDate" type="date" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>價格（每股）</label><input id="txPrice" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'+
+    '<div class="field"><label>股數</label><input id="txQty" type="number" step="1" inputmode="numeric" placeholder="0"></div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitTx(\''+code+'\')">儲存</button></div>'
+  );
+}
+function pickTxType(el){ el.parentElement.querySelectorAll('.opt').forEach(o=>o.classList.remove('active')); el.classList.add('active'); }
+function submitTx(code){
+  const type = document.querySelector('#txType .opt.active').dataset.v;
+  const date = document.getElementById('txDate').value;
+  const price = parseFloat(document.getElementById('txPrice').value);
+  const qty = parseFloat(document.getElementById('txQty').value);
+  if(!date || !(price>0) || !(qty>0)){ toast('請完整填寫日期、價格與股數'); return; }
+  DB.transactions.push({id:nextId(), code, type, date, price, qty});
+  save(); closeSheet(); toast('已新增交易紀錄'); render();
+}
+
+function openDivSheet(code){
+  openSheet(
+    '<div class="sheet-head"><h3>新增股息紀錄</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="field"><label>除息入帳日期</label><input id="divDate" type="date" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>股息金額（NT$，稅後實領）</label><input id="divAmount" type="number" step="1" inputmode="decimal" placeholder="0"></div>'+
+    '<div class="field"><label>備註（選填）</label><input id="divNote" placeholder="例如：第2季配息"></div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitDiv(\''+code+'\')">儲存</button></div>'
+  );
+}
+function submitDiv(code){
+  const date = document.getElementById('divDate').value;
+  const amount = parseFloat(document.getElementById('divAmount').value);
+  const note = document.getElementById('divNote').value.trim();
+  if(!date || !(amount>0)){ toast('請填寫日期與金額'); return; }
+  DB.dividends.push({id:nextId(), code, date, amount, note});
+  save(); closeSheet(); toast('已新增股息紀錄'); render();
+}
+
+function openExdivSheet(code){
+  openSheet(
+    '<div class="sheet-head"><h3>新增除息日</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="field"><label>除息日</label><input id="exdivDate" type="date" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>現金股利（NT$，每股）</label><input id="exdivAmount" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'+
+    '<div class="field"><label>當前股價</label><input id="exdivPrice" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'+
+    '<div class="hint">殖利率 = 現金股利 ÷ 當前股價 × 100%，系統會自動算。</div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitExdiv(\''+code+'\')">儲存</button></div>'
+  );
+}
+function submitExdiv(code){
+  const date = document.getElementById('exdivDate').value;
+  const amount = parseFloat(document.getElementById('exdivAmount').value);
+  const price = parseFloat(document.getElementById('exdivPrice').value);
+  if(!date || !(amount>0) || !(price>0)){ toast('請填寫除息日、現金股利與當前股價'); return; }
+  DB.exdiv.push({id:nextId(), code, date, amount, price});
+  save(); closeSheet(); toast('已新增除息日紀錄'); render();
+}
+
+function openSplitSheet(code){
+  openSheet(
+    '<div class="sheet-head"><h3>新增股票分割</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="field"><label>分割生效日期</label><input id="splitDate" type="date" value="'+todayStr()+'"></div>'+
+    '<div class="field"><label>分割倍數（1股變成幾股）</label><input id="splitMul" type="number" step="0.01" inputmode="decimal" placeholder="例如 2（1變2）或 0.5（2合1）"></div>'+
+    '<div class="hint">系統會在這天之前的持股股數乘上這個倍數，平均成本除以這個倍數。</div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitSplit(\''+code+'\')">儲存</button></div>'
+  );
+}
+function submitSplit(code){
+  const date = document.getElementById('splitDate').value;
+  const multiplier = parseFloat(document.getElementById('splitMul').value);
+  if(!date || !(multiplier>0)){ toast('請填寫日期與倍數'); return; }
+  DB.splits.push({id:nextId(), code, date, multiplier});
+  save(); closeSheet(); toast('已新增分割紀錄'); render();
+}
+
+function openMarketManageSheet(){
+  const items = DB.symbols.map(s=>{
+    const m = DB.market[s.code] || {enabled:false, price:'', updatedAt:''};
+    return '<div class="card" style="margin-bottom:10px;">'+
+      '<div class="switch-row" style="padding:0 0 10px;">'+
+        '<div><div class="t">'+esc(s.name)+'</div><div class="d">'+esc(s.code)+'</div></div>'+
+        '<label class="switch"><input type="checkbox" '+(m.enabled?'checked':'')+' onchange="UI.toggleMarketEnabled(\''+s.code+'\', this.checked)"><div class="track"></div><div class="thumb"></div></label>'+
+      '</div>'+
+      '<div class="field" style="margin-bottom:0;"><label>目前股價</label><input type="number" step="0.01" value="'+(m.price||'')+'" placeholder="0.00" onchange="UI.setMarketPrice(\''+s.code+'\', this.value)"></div>'+
+      '</div>';
+  }).join('');
+  openSheet(
+    '<div class="sheet-head"><h3>管理市值標的</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="hint" style="margin-top:0;">開啟開關並輸入目前股價，才會被計入市值總覽；股價需要自己定期更新。</div>'+
+    (items || emptyState('還沒有任何標的','先到個股或存股新增標的。', I.inbox)) +
+    '<div class="sheet-actions" style="margin-top:4px;"><button class="btn btn-primary btn-block" onclick="UI.closeSheet();UI.render()">完成</button></div>'
+  );
+}
+function toggleMarketEnabled(code, checked){
+  if(!DB.market[code]) DB.market[code] = {enabled:false, price:0, updatedAt:''};
+  DB.market[code].enabled = checked;
+  save();
+}
+function setMarketPrice(code, val){
+  const price = parseFloat(val);
+  if(!DB.market[code]) DB.market[code] = {enabled:true, price:0, updatedAt:''};
+  DB.market[code].price = isNaN(price) ? 0 : price;
+  DB.market[code].updatedAt = todayStr();
+  save();
+}
+
+/* ---------- settings / backup ---------- */
+function openSettingsSheet(){
+  openSheet(
+    '<div class="sheet-head"><h3>設定與備份</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="hint" style="margin-top:0;">資料只存在這支手機、這個瀏覽器裡。清除瀏覽器資料前，記得先匯出備份。</div>'+
+    '<div class="sheet-actions" style="flex-direction:column;gap:10px;">'+
+      '<button class="btn btn-primary btn-block" onclick="UI.openExportSheet()">匯出備份</button>'+
+      '<button class="btn btn-block" onclick="UI.openImportSheet()">從備份匯入</button>'+
+      (DB.demo ? '<button class="btn btn-block" onclick="UI.clearDemo()">清除範例資料</button>' : '<button class="btn btn-danger btn-block" onclick="UI.confirmResetAll()">清除全部資料</button>')+
+    '</div>'
+  );
+}
+function openExportSheet(){
+  const json = JSON.stringify(DB, null, 2);
+  openSheet(
+    '<div class="sheet-head"><h3>匯出備份</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="hint" style="margin-top:0;">這個網頁版沒辦法直接存檔案，請複製下方內容，貼到備忘錄、雲端筆記或傳給自己，之後就能用「從備份匯入」還原。</div>'+
+    '<div class="field"><textarea id="exportText" readonly rows="8">'+esc(json)+'</textarea></div>'+
+    '<div class="sheet-actions"><button class="btn btn-primary btn-block" id="copyBtn">'+I.copy+' 複製全部內容</button></div>'
+  );
+  document.getElementById('copyBtn').onclick = function(){
+    const ta = document.getElementById('exportText');
+    ta.select(); ta.setSelectionRange(0, 999999);
+    const done = ()=> toast('已複製，貼到你想保存的地方吧');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(json).then(done).catch(()=>{ try{ document.execCommand('copy'); done(); }catch(e){ toast('複製失敗，請手動選取文字複製'); } });
+    } else {
+      try{ document.execCommand('copy'); done(); }catch(e){ toast('複製失敗，請手動選取文字複製'); }
+    }
+  };
+}
+function openImportSheet(){
+  openSheet(
+    '<div class="sheet-head"><h3>從備份匯入</h3><button class="icon-btn" onclick="UI.closeSheet()">'+I.close+'</button></div>'+
+    '<div class="hint" style="margin-top:0;">貼上之前匯出的備份內容。匯入後會覆蓋目前手機上的所有資料，請先確認。</div>'+
+    '<div class="field"><textarea id="importText" rows="8" placeholder="貼上備份的 JSON 內容..."></textarea></div>'+
+    '<div class="sheet-actions"><button class="btn" onclick="UI.closeSheet()">取消</button><button class="btn btn-primary" onclick="UI.submitImport()">匯入並覆蓋</button></div>'
+  );
+}
+function submitImport(){
+  const raw = document.getElementById('importText').value.trim();
+  if(!raw){ toast('請先貼上備份內容'); return; }
+  try{
+    const data = JSON.parse(raw);
+    if(!data || !Array.isArray(data.symbols)) throw new Error('format');
+    data.demo = false;
+    if(!data.seq) data.seq = 1;
+    if(!data.market) data.market = {};
+    if(!data.exdiv) data.exdiv = [];
+    if(!data.dividends) data.dividends = [];
+    if(!data.splits) data.splits = [];
+    DB = data; save(); closeSheet(); toast('匯入成功'); go('home');
+  }catch(e){ toast('格式錯誤，請確認貼上的是完整備份內容'); }
+}
+function confirmResetAll(){
+  confirmSheet('將清除這支手機上所有的投資紀錄，且無法復原。建議先匯出備份。', function(){
+    DB = freshDB(); save(); toast('已清除全部資料'); go('home');
+  });
+}
+function clearDemo(){
+  DB = freshDB(); save(); toast('已清除範例資料，開始記錄你自己的投資吧'); render();
+}
+
+/* ---------- deletions ---------- */
+function confirmDeleteSymbol(code){
+  const sym = DB.symbols.find(s=>s.code===code);
+  confirmSheet('將刪除「'+(sym?sym.name:code)+'」及其所有交易、股息、分割紀錄，且無法復原。', function(){
+    DB.symbols = DB.symbols.filter(s=>s.code!==code);
+    DB.transactions = DB.transactions.filter(t=>t.code!==code);
+    DB.dividends = DB.dividends.filter(d=>d.code!==code);
+    DB.exdiv = DB.exdiv.filter(d=>d.code!==code);
+    DB.splits = DB.splits.filter(s=>s.code!==code);
+    delete DB.market[code];
+    save(); closeDetail(); toast('已刪除');
+  });
+}
+function confirmDeleteTx(id){
+  confirmSheet('確定要刪除這筆交易紀錄嗎？', function(){
+    DB.transactions = DB.transactions.filter(t=>t.id!==id);
+    save(); toast('已刪除交易紀錄'); render();
+  });
+}
+function confirmDeleteDiv(id){
+  confirmSheet('確定要刪除這筆股息紀錄嗎？', function(){
+    DB.dividends = DB.dividends.filter(d=>d.id!==id);
+    save(); toast('已刪除股息紀錄'); render();
+  });
+}
+function confirmDeleteExdiv(id){
+  confirmSheet('確定要刪除這筆除息日紀錄嗎？', function(){
+    DB.exdiv = DB.exdiv.filter(d=>d.id!==id);
+    save(); toast('已刪除除息日紀錄'); render();
+  });
+}
+function confirmDeleteSplit(id){
+  confirmSheet('確定要刪除這筆分割紀錄嗎？', function(){
+    DB.splits = DB.splits.filter(s=>s.id!==id);
+    save(); toast('已刪除分割紀錄'); render();
+  });
+}
+
+/* ===================== small setters ===================== */
+function setEtfSub(v){ state.etfSub=v; render(); }
+function setDetailSub(v){ state.detailSub=v; render(); }
+function setPlGran(v){ state.plGran=v; render(); }
+
+/* ===================== PUBLIC API ===================== */
+window.UI = {
+  go, openDetail, closeDetail, setEtfSub, setDetailSub, setPlGran,
+  setPfMode, setPfYear, setPfMonth,
+  openAddSymbolSheet, pickSymType, submitAddSymbol,
+  openTxSheet, pickTxType, submitTx,
+  openDivSheet, submitDiv,
+  openExdivSheet, submitExdiv,
+  openSplitSheet, submitSplit,
+  openMarketManageSheet, toggleMarketEnabled, setMarketPrice,
+  openSettingsSheet, openExportSheet, openImportSheet, submitImport,
+  confirmResetAll, clearDemo,
+  confirmDeleteSymbol, confirmDeleteTx, confirmDeleteDiv, confirmDeleteExdiv, confirmDeleteSplit,
+  closeSheet, render,
+};
+
+/* ===================== BOOT ===================== */
+function start(){
+  load();
+  render();
+}
+if(window.claude && window.claude.hot){
+  window.claude.hot.ready ? window.claude.hot.ready(start) : start();
+} else {
+  start();
+}
+})();
+</script>
