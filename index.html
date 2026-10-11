@@ -195,7 +195,10 @@ nav.tabbar{
   display:flex; justify-content:center;
 }
 .tabbar-inner{
-  width:100%; max-width:520px; background:var(--surface); border:1px solid var(--border);
+  width:100%; max-width:520px;
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border:1px solid var(--border);
   border-radius:20px; box-shadow:var(--shadow); display:flex; padding:6px;
 }
 .tab-btn{
@@ -234,9 +237,15 @@ nav.tabbar{
 .period-bar .seg{ flex:none; }
 .period-bar select, .period-bar input[type="month"]{
   border:1px solid var(--border); background:var(--surface); color:var(--fg);
-  border-radius:10px; padding:7px 10px; font-size:12.5px; font-weight:600; font-family:inherit;
+  border-radius:10px; padding:7px 10px; font-size:16px; font-weight:600; font-family:inherit;
 }
 .period-note{ font-size:11px; color:var(--faint); margin:-10px 0 14px; line-height:1.5; }
+.search-wrap{ margin-bottom:12px; }
+.search-wrap input{
+  width:100%; border:1px solid var(--border); background:var(--surface-alt); color:var(--fg);
+  border-radius:11px; padding:10px 12px; font-size:16px; font-family:inherit;
+}
+.search-wrap input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
 
 .row-list{ display:flex; flex-direction:column; gap:8px; }
 .row-item{
@@ -283,9 +292,9 @@ table.pl-table tr:last-child td{ border-bottom:none; }
 .field label{ display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; }
 .field input, .field select, .field textarea{
   width:100%; border:1px solid var(--border); background:var(--surface-alt); color:var(--fg);
-  border-radius:11px; padding:11px 12px; font-size:14.5px; font-family:inherit;
+  border-radius:11px; padding:11px 12px; font-size:16px; font-family:inherit;
 }
-.field textarea{ resize:vertical; min-height:90px; font-family:'Poppins',monospace; font-size:12px; line-height:1.5; }
+.field textarea{ resize:vertical; min-height:90px; font-family:'Poppins',monospace; font-size:16px; line-height:1.5; }
 .field input:focus, .field select:focus, .field textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
 .toggle-row{ display:flex; gap:8px; }
 .toggle-row .opt{
@@ -421,10 +430,11 @@ function splitsForCode(code){ return DB.splits.filter(s=>s.code===code); }
 function divForCode(code){ return DB.dividends.filter(d=>d.code===code); }
 function exdivForCode(code){ return DB.exdiv.filter(d=>d.code===code); }
 
-function computeTimeline(code){
-  const events = [];
+function computeTimeline(code, asOfDate){
+  let events = [];
   txForCode(code).forEach(t=>events.push(Object.assign({kind:'tx'}, t)));
   splitsForCode(code).forEach(s=>events.push(Object.assign({kind:'split'}, s)));
+  if(asOfDate){ events = events.filter(e=> e.date <= asOfDate); }
   events.sort((a,b)=>{
     if(a.date!==b.date) return a.date<b.date?-1:1;
     if(a.kind!==b.kind) return a.kind==='split'?-1:1;
@@ -488,6 +498,18 @@ function periodLabelShort(pf){
   if(pf.mode==='month'){ const [y,m]=pf.month.split('-'); return y+'/'+m; }
   return '全部';
 }
+/* end-of-period date for "as of" snapshots (cost/holdings at that point in time) */
+function periodEndDate(pf){
+  pf = pf || state.pf;
+  if(pf.mode==='year') return pf.year+'-12-31';
+  if(pf.mode==='month'){
+    const [y,m] = pf.month.split('-');
+    const lastDay = new Date(Number(y), Number(m), 0).getDate();
+    return pf.month+'-'+String(lastDay).padStart(2,'0');
+  }
+  return null; // 'all' → no cutoff
+}
+function plCls(n){ n = Number(n)||0; if(n>0) return 'up'; if(n<0) return 'down'; return ''; }
 
 function periodKey(date, gran){
   if(gran==='year') return date.slice(0,4);
@@ -535,8 +557,18 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;
 /* ===================== STATE / ROUTER ===================== */
 const state = {
   tab:'home', detailCode:null, etfSub:'list', detailSub:'tx', plGran:'month',
+  search:'', marketType:'all',
   pf: { mode:'all', year:String(new Date().getFullYear()), month: todayStr().slice(0,7) },
 };
+function setMarketType(v){ state.marketType = v; render(); }
+function filterSymList(v){
+  state.search = v;
+  const q = v.trim().toLowerCase();
+  document.querySelectorAll('#main .sym-item').forEach(el=>{
+    const hay = (el.dataset.code+' '+el.dataset.name).toLowerCase();
+    el.style.display = (!q || hay.includes(q)) ? '' : 'none';
+  });
+}
 function setPfMode(mode){
   state.pf.mode = mode;
   if(mode==='year' && !state.pf.year) state.pf.year = String(new Date().getFullYear());
@@ -605,6 +637,7 @@ function render(){
   const app = document.getElementById('app');
   app.innerHTML = headerHtml() + '<main id="main"></main>' + tabbarHtml() + fabHtml();
   document.getElementById('main').innerHTML = state.detailCode ? renderDetail(state.detailCode) : renderTab();
+  if(!state.detailCode && state.tab==='stocks' && state.search){ filterSymList(state.search); }
 }
 
 function headerHtml(){
@@ -630,7 +663,7 @@ function tabbarHtml(){
     {k:'market', label:'市值', icon:I.market},
   ];
   return '<nav class="tabbar"><div class="tabbar-inner">' + tabs.map(t=>
-    '<button class="tab-btn'+(state.tab===t.k&&!state.detailCode?' active':'')+'" onclick="UI.go(\''+t.k+'\')">'+t.icon+'<span>'+t.label+'</span></button>'
+    '<button class="tab-btn'+(state.tab===t.k?' active':'')+'" onclick="UI.go(\''+t.k+'\')">'+t.icon+'<span>'+t.label+'</span></button>'
   ).join('') + '</div></nav>';
 }
 function fabHtml(){
@@ -668,7 +701,7 @@ function renderHome(){
   html += '<div class="hero-grid">';
   html += '<div class="stat-card stat-stock" onclick="UI.go(\'stocks\')"><div class="corner"></div>'+
     '<div class="label">'+I.stock.replace('width="24"','width="14"').replace('height="24"','height="14"')+' 個股損益</div>'+
-    '<div class="value num '+(stockPL>=0?'up':'down')+'">'+fmtCompact(stockPL)+'</div>'+
+    '<div class="value num '+plCls(stockPL)+'">'+fmtCompact(stockPL)+'</div>'+
     '<div class="sub">'+pLabel+'</div></div>';
   html += '<div class="stat-card stat-etf" onclick="UI.go(\'etf\')"><div class="corner"></div>'+
     '<div class="label">'+I.etf.replace('width="24"','width="14"').replace('height="24"','height="14"')+' 存股投入</div>'+
@@ -680,12 +713,12 @@ function renderHome(){
     '<div class="sub">'+pLabel+'</div></div>';
   html += '</div>';
 
-  const all = DB.symbols;
-  html += '<div class="section-title">持股總覽<span class="tag">'+all.length+' 檔</span></div>';
-  if(all.length===0){
-    html += emptyState('目前還沒有任何標的', '到「個股」或「存股」分頁，用右下角的＋新增你第一筆投資標的。', I.inbox);
+  const holdings = DB.symbols.filter(s=> computeTimeline(s.code).qty > 0);
+  html += '<div class="section-title">持股總覽<span class="tag">'+holdings.length+' 檔</span></div>';
+  if(holdings.length===0){
+    html += emptyState('目前沒有持股中的標的', '到「個股」或「存股」分頁，用右下角的＋新增你第一筆投資標的。', I.inbox);
   } else {
-    html += '<div class="sym-list">' + all.map(renderSymRow).join('') + '</div>';
+    html += '<div class="sym-list">' + holdings.map(renderSymRow).join('') + '</div>';
   }
   return html;
 }
@@ -699,8 +732,8 @@ function renderSymRow(sym){
   const isEtf = sym.type==='etf';
   const metric = isEtf ? buyCostInPeriod(sym.code) : realizedInPeriod(sym.code);
   const metricLabel = isEtf ? '投入金額' : '損益';
-  const cls = isEtf ? '' : (metric>=0?'up':'down');
-  return '<div class="sym-item type-'+sym.type+'" onclick="UI.openDetail(\''+sym.code+'\')">'+
+  const cls = isEtf ? '' : plCls(metric);
+  return '<div class="sym-item type-'+sym.type+'" data-code="'+esc(sym.code)+'" data-name="'+esc(sym.name)+'" onclick="UI.openDetail(\''+sym.code+'\')">'+
     '<div class="sym-avatar">'+esc(sym.code.slice(0,4))+'</div>'+
     '<div class="sym-main"><div class="name">'+esc(sym.name)+'</div><div class="code">'+esc(sym.code)+' · 持有 '+fmtNum(tl.qty)+' 股</div></div>'+
     '<div class="sym-right"><div class="v num '+cls+'">'+fmt(metric)+'</div><div class="l">'+metricLabel+'</div></div>'+
@@ -713,6 +746,9 @@ function renderSymbolList(type){
   let html = '';
   if(type==='etf') html += etfSubtabsHtml();
   html += demoBanner();
+  if(type==='stock'){
+    html += '<div class="search-wrap"><input type="text" placeholder="搜尋代號或名稱" value="'+esc(state.search||'')+'" oninput="UI.filterSymList(this.value)"></div>';
+  }
   html += periodFilterBar();
   html += '<div class="section-title">'+label+'<span class="tag">'+list.length+' 檔</span></div>';
   if(list.length===0){
@@ -770,11 +806,20 @@ function renderDividendSummary(){
   return html;
 }
 
+function marketTypeBar(){
+  const v = state.marketType || 'all';
+  return '<div class="seg" style="margin-bottom:12px;">'+
+    '<button class="'+(v==='all'?'active':'')+'" onclick="UI.setMarketType(\'all\')">全部</button>'+
+    '<button class="'+(v==='stock'?'active':'')+'" onclick="UI.setMarketType(\'stock\')">個股</button>'+
+    '<button class="'+(v==='etf'?'active':'')+'" onclick="UI.setMarketType(\'etf\')">存股 ETF</button>'+
+    '</div>';
+}
 function renderMarket(){
-  const enabled = DB.symbols.filter(s=> DB.market[s.code] && DB.market[s.code].enabled);
+  const marketType = state.marketType || 'all';
+  const enabledAll = DB.symbols.filter(s=> DB.market[s.code] && DB.market[s.code].enabled);
   let html = '<div class="section-title">市值總覽<span class="tag">需手動設定</span></div>';
 
-  if(enabled.length===0){
+  if(enabledAll.length===0){
     html += '<div class="empty">'+I.market+
       '<b>尚未設定任何市值</b>'+
       '<p>市值資料不會自動抓取，也不會混進你平常看的投入/股息紀錄裡。想追蹤報酬率的話，先選擇要納入計算的標的並輸入目前股價。</p>'+
@@ -783,12 +828,22 @@ function renderMarket(){
     return html;
   }
 
-  html += periodFilterBar();
-  html += '<div class="period-note">成本與市值是目前持股的即時狀態，只有股息會依上方期間篩選。</div>';
+  html += marketTypeBar();
+  const enabled = marketType==='all' ? enabledAll : enabledAll.filter(s=>s.type===marketType);
 
+  html += periodFilterBar();
+  html += '<div class="period-note">成本與持股股數會反映所選期間結束當天的狀態；市值仍用你目前輸入的股價計算，只有股息是這段期間內實際入帳的金額。</div>';
+
+  if(enabled.length===0){
+    html += emptyState('這個分類還沒有設定市值的標的', '切換上方的篩選，或到「管理標的」加入。', I.market);
+    html += '<div style="text-align:center;margin-top:10px;"><button class="btn btn-ghost btn-sm" onclick="UI.openMarketManageSheet()">管理標的</button></div>';
+    return html;
+  }
+
+  const asOf = periodEndDate(state.pf);
   let totalCost=0, totalValue=0, totalDiv=0;
   const rows = enabled.map(s=>{
-    const tl = computeTimeline(s.code);
+    const tl = computeTimeline(s.code, asOf);
     const m = DB.market[s.code];
     const cost = tl.qty*tl.avgCost;
     const value = tl.qty*(Number(m.price)||0);
@@ -800,11 +855,11 @@ function renderMarket(){
   const totalPct = totalCost>0 ? (totalReturn/totalCost*100) : 0;
 
   html += '<div class="card" style="margin-bottom:16px;">'+
-    '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">成本</span><span class="num" style="font-weight:700;">'+fmt(totalCost)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">成本 · '+periodLabelShort()+'</span><span class="num" style="font-weight:700;">'+fmt(totalCost)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">市值</span><span class="num" style="font-weight:700;">'+fmt(totalValue)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;margin-bottom:10px;"><span style="font-size:12px;color:var(--muted);font-weight:600;">累計股息 · '+periodLabelShort()+'</span><span class="num" style="font-weight:700;color:var(--gold);">'+fmt(totalDiv)+'</span></div>'+
     '<div style="height:1px;background:var(--border);margin:10px 0;"></div>'+
-    '<div style="display:flex;justify-content:space-between;"><span style="font-size:13px;font-weight:700;">含息報酬</span><span class="num '+(totalReturn>=0?'up':'down')+'" style="font-weight:700;font-size:17px;">'+fmt(totalReturn)+' ('+(totalPct>=0?'+':'')+fmtNum(totalPct,2)+'%)</span></div>'+
+    '<div style="display:flex;justify-content:space-between;"><span style="font-size:13px;font-weight:700;">含息報酬</span><span class="num '+plCls(totalReturn)+'" style="font-weight:700;font-size:17px;">'+fmt(totalReturn)+' ('+(totalPct>=0?'+':'')+fmtNum(totalPct,2)+'%)</span></div>'+
     '</div>';
 
   html += '<div class="section-title">持股明細<button class="btn btn-ghost btn-sm" onclick="UI.openMarketManageSheet()">管理標的</button></div>';
@@ -815,7 +870,7 @@ function renderMarket(){
     html += '<div class="sym-item type-'+r.sym.type+'" onclick="UI.openDetail(\''+r.sym.code+'\')">'+
       '<div class="sym-avatar">'+esc(r.sym.code.slice(0,4))+'</div>'+
       '<div class="sym-main"><div class="name">'+esc(r.sym.name)+'</div><div class="code">成本 '+fmtNum(r.cost)+' · 市值 '+fmtNum(r.value)+'</div></div>'+
-      '<div class="sym-right"><div class="v num '+(ret>=0?'up':'down')+'">'+(pct>=0?'+':'')+fmtNum(pct,1)+'%</div><div class="l">'+fmtDate(r.updatedAt||'')+' 更新</div></div>'+
+      '<div class="sym-right"><div class="v num '+plCls(ret)+'">'+(pct>=0?'+':'')+fmtNum(pct,1)+'%</div><div class="l">'+fmtDate(r.updatedAt||'')+' 更新</div></div>'+
       '<div class="chev">'+I.chev+'</div></div>';
   });
   html += '</div>';
@@ -839,7 +894,7 @@ function renderDetail(code){
   html += '<div class="metric-row">'+
     '<div class="metric"><div class="mv num">'+fmtNum(tl.qty)+'</div><div class="ml">持有股數</div></div>'+
     '<div class="metric"><div class="mv num">'+fmtNum(tl.avgCost,2)+'</div><div class="ml">加權均價</div></div>'+
-    '<div class="metric"><div class="mv num '+(isEtf?'':(realizedTotal>=0?'up':'down'))+'">'+(isEtf?fmtNum(tl.qty*tl.avgCost):fmt(realizedTotal))+'</div><div class="ml">'+(isEtf?'投入成本':'已實現損益')+'</div></div>'+
+    '<div class="metric"><div class="mv num '+(isEtf?'':plCls(realizedTotal))+'">'+(isEtf?fmtNum(tl.qty*tl.avgCost):fmt(realizedTotal))+'</div><div class="ml">'+(isEtf?'投入成本':'已實現損益')+'</div></div>'+
     '</div>';
 
   const subtabs = [{k:'tx',label:'交易紀錄'}];
@@ -929,13 +984,13 @@ function renderPlSection(sym, isEtf){
     '</div></div>';
   const grouped = groupPL(tl.realized, state.plGran);
   const total = tl.realized.reduce((s,r)=>s+r.amount,0);
-  html += '<div class="total-strip"><div class="l">累計已實現損益</div><div class="v num '+(total>=0?'up':'down')+'">'+fmt(total)+'</div></div>';
+  html += '<div class="total-strip"><div class="l">累計已實現損益</div><div class="v num '+plCls(total)+'">'+fmt(total)+'</div></div>';
   if(grouped.length===0){
     html += emptyState('還沒有已實現損益', '賣出後系統會自動依加權平均成本計算損益，並依你選的日/月/年彙整在這裡。', I.market);
     return html;
   }
   html += '<div class="table-wrap"><table class="pl-table"><thead><tr><th>期間</th><th style="text-align:right;">損益</th></tr></thead><tbody>'+
-    grouped.map(g=> '<tr><td class="num">'+periodLabel(g.period, state.plGran)+'</td><td class="num '+(g.amount>=0?'up':'down')+'" style="text-align:right;font-weight:700;">'+fmt(g.amount)+'</td></tr>').join('')+
+    grouped.map(g=> '<tr><td class="num">'+periodLabel(g.period, state.plGran)+'</td><td class="num '+plCls(g.amount)+'" style="text-align:right;font-weight:700;">'+fmt(g.amount)+'</td></tr>').join('')+
     '</tbody></table></div>';
   return html;
 }
@@ -1209,7 +1264,7 @@ function setPlGran(v){ state.plGran=v; render(); }
 /* ===================== PUBLIC API ===================== */
 window.UI = {
   go, openDetail, closeDetail, setEtfSub, setDetailSub, setPlGran,
-  setPfMode, setPfYear, setPfMonth,
+  setPfMode, setPfYear, setPfMonth, setMarketType, filterSymList,
   openAddSymbolSheet, pickSymType, submitAddSymbol,
   openTxSheet, pickTxType, submitTx,
   openDivSheet, submitDiv,
