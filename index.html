@@ -196,7 +196,7 @@ nav.tabbar{
 }
 .tabbar-inner{
   width:100%; max-width:520px;
-  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 50%, var(--surface) 50%);
   backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%);
   border:1px solid var(--border);
   border-radius:20px; box-shadow:var(--shadow); display:flex; padding:6px;
@@ -207,7 +207,7 @@ nav.tabbar{
   font-size:10.5px; font-weight:600;
 }
 .tab-btn svg{ width:20px; height:20px; }
-.tab-btn.active{ color:var(--accent-strong); background:var(--accent-soft); }
+.tab-btn.active{ color:#fff; background:var(--accent); box-shadow:0 4px 10px color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* ---------- detail panel ---------- */
 .detail-head{ display:flex; align-items:center; gap:10px; margin:4px 0 16px; }
@@ -577,7 +577,7 @@ function setPfMode(mode){
 }
 function setPfYear(y){ state.pf.year = y; render(); }
 function setPfMonth(m){ state.pf.month = m; render(); }
-function periodFilterBar(){
+function periodFilterBar(trailing){
   const pf = state.pf;
   let extra = '';
   if(pf.mode==='year'){
@@ -591,7 +591,7 @@ function periodFilterBar(){
     '<button class="'+(pf.mode==='all'?'active':'')+'" onclick="UI.setPfMode(\'all\')">全部</button>'+
     '<button class="'+(pf.mode==='year'?'active':'')+'" onclick="UI.setPfMode(\'year\')">年</button>'+
     '<button class="'+(pf.mode==='month'?'active':'')+'" onclick="UI.setPfMode(\'month\')">月</button>'+
-    '</div>'+extra+'</div>';
+    '</div>'+extra+(trailing?('<div style="margin-left:auto;">'+trailing+'</div>'):'')+'</div>';
 }
 
 function go(tab){ state.tab=tab; state.detailCode=null; state.etfSub='list'; render(); window.scrollTo(0,0); }
@@ -647,13 +647,9 @@ function headerHtml(){
       '<button class="icon-btn" onclick="UI.openSettingsSheet()">'+I.settings+'</button></header>';
   }
   return '<header class="topbar">'+
-    '<div class="brand">'+brandLogo+'<div class="brand-text"><b>GainLog</b><span>'+titleSub()+'</span></div></div>'+
+    '<div class="brand">'+brandLogo+'<div class="brand-text"><b>GainLog</b></div></div>'+
     '<div class="header-actions"><button class="icon-btn" onclick="UI.openSettingsSheet()">'+I.settings+'</button></div>'+
     '</header>';
-}
-function titleSub(){
-  const d = new Date();
-  return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日';
 }
 function tabbarHtml(){
   const tabs = [
@@ -808,10 +804,10 @@ function renderDividendSummary(){
 
 function marketTypeBar(){
   const v = state.marketType || 'all';
-  return '<div class="seg" style="margin-bottom:12px;">'+
+  return '<div class="seg">'+
     '<button class="'+(v==='all'?'active':'')+'" onclick="UI.setMarketType(\'all\')">全部</button>'+
     '<button class="'+(v==='stock'?'active':'')+'" onclick="UI.setMarketType(\'stock\')">個股</button>'+
-    '<button class="'+(v==='etf'?'active':'')+'" onclick="UI.setMarketType(\'etf\')">存股 ETF</button>'+
+    '<button class="'+(v==='etf'?'active':'')+'" onclick="UI.setMarketType(\'etf\')">ETF</button>'+
     '</div>';
 }
 function renderMarket(){
@@ -828,10 +824,9 @@ function renderMarket(){
     return html;
   }
 
-  html += marketTypeBar();
   const enabled = marketType==='all' ? enabledAll : enabledAll.filter(s=>s.type===marketType);
 
-  html += periodFilterBar();
+  html += periodFilterBar(marketTypeBar());
   html += '<div class="period-note">成本與持股股數會反映所選期間結束當天的狀態；市值仍用你目前輸入的股價計算，只有股息是這段期間內實際入帳的金額。</div>';
 
   if(enabled.length===0){
